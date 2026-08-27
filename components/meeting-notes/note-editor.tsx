@@ -99,7 +99,11 @@ export function NoteEditor({
           return (
             <div
               key={line.id}
-              className={isNewGroup ? "group/line mt-3 flex flex-col first:mt-0" : "group/line flex flex-col"}
+              className={
+                isNewGroup
+                  ? "group/line relative mt-3 flex flex-col first:mt-0"
+                  : "group/line relative flex flex-col"
+              }
             >
               <NoteLine
                 line={line}
@@ -114,7 +118,7 @@ export function NoteEditor({
               <button
                 type="button"
                 onClick={() => onCreateLine(line.id)}
-                className="ml-8 flex items-center gap-1 py-0.5 text-[11px] text-muted-foreground opacity-0 transition group-hover/line:opacity-100 hover:text-foreground"
+                className="absolute left-8 top-full z-[5] flex items-center gap-1 py-0.5 text-[11px] text-muted-foreground opacity-0 transition group-hover/line:opacity-100 hover:text-foreground"
               >
                 <Plus className="size-3" />새 줄
               </button>
