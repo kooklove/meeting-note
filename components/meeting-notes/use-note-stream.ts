@@ -102,6 +102,11 @@ export function useNoteStream(slug: string) {
       setCursors((prev) => ({ ...prev, [data.participantId]: data }))
     })
 
+    source.addEventListener("online-meeting-url-changed", (event) => {
+      const data = JSON.parse(event.data) as { onlineMeetingUrl: string | null }
+      update((prev) => ({ ...prev, onlineMeetingUrl: data.onlineMeetingUrl }))
+    })
+
     source.onerror = () => setConnected(false)
 
     return () => source.close()

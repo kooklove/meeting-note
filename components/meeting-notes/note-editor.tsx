@@ -1,23 +1,20 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { EditedByList } from "./edited-by-list"
 import { MeetingWrapUp } from "./meeting-wrap-up"
 import { NoteLine } from "./note-line"
 import { NoteStatusBadge } from "./note-status-badge"
+import { PrimaryToolbar } from "./primary-toolbar"
 import { RemoteCursors } from "./remote-cursors"
-import { SendMenu } from "./send-menu"
 import { SessionBadge } from "./session-badge"
 import { useCursorBroadcast } from "./use-cursor-broadcast"
+import { useMyHighlightPreference } from "./use-my-highlight-preference"
 import { formatScheduledAt } from "@/lib/meeting-notes/datetime"
 import type { CursorPosition, Line, MeetingNoteSnapshot, Participant } from "@/lib/meeting-notes/types"
-
-function displayName(name: string | null) {
-  if (!name) return null
-  return name.length > 4 ? name.slice(0, 4) : name
-}
 
 function authorKey(line: Line) {
   return line.authorIds[0] ?? null
@@ -36,6 +33,7 @@ export function NoteEditor({
   onReopenMeeting,
   onConfirm,
   onSendClipboard,
+  onUpdateOnlineMeetingUrl,
 }: {
   note: MeetingNoteSnapshot
   me: Participant
@@ -49,10 +47,14 @@ export function NoteEditor({
   onReopenMeeting: () => Promise<void>
   onConfirm: (confirmed: boolean) => void
   onSendClipboard: () => Promise<string>
+  onUpdateOnlineMeetingUrl: (url: string) => void
 }) {
   const participantsById = Object.fromEntries(note.participants.map((p) => [p.id, p]))
   const containerRef = useRef<HTMLDivElement>(null)
   useCursorBroadcast(note.slug, sessionId, containerRef)
+
+  const { enabled: myHighlightEnabled, toggle: toggleMyHighlight } = useMyHighlightPreference()
+  const [highlightModeEnabled, setHighlightModeEnabled] = useState(false)
 
   return (
     <div className="flex w-full max-w-3xl flex-col gap-6 self-center py-10">
@@ -67,24 +69,18 @@ export function NoteEditor({
             <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{note.agenda}</p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <SessionBadge sessionId={sessionId} />
-          <SendMenu onSendClipboard={onSendClipboard} />
-        </div>
+        <SessionBadge sessionId={sessionId} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-2">
-        {note.participants.map((p) => (
-          <span
-            key={p.id}
-            className="flex items-center gap-1.5 rounded-full bg-background px-2 py-1 text-xs ring-1 ring-foreground/10"
-          >
-            <span className="size-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-            {p.abbr || displayName(p.name) || p.email}
-            {p.isHost ? <span className="text-muted-foreground">(주최자)</span> : null}
-          </span>
-        ))}
-      </div>
+      <PrimaryToolbar
+        note={note}
+        myHighlightEnabled={myHighlightEnabled}
+        onToggleMyHighlight={toggleMyHighlight}
+        highlightModeEnabled={highlightModeEnabled}
+        onToggleHighlightMode={() => setHighlightModeEnabled((v) => !v)}
+        onSendClipboard={onSendClipboard}
+        onUpdateOnlineMeetingUrl={onUpdateOnlineMeetingUrl}
+      />
 
       <MeetingWrapUp
         note={note}
@@ -99,19 +95,12 @@ export function NoteEditor({
         {note.lines.map((line, index) => {
           const prev = index > 0 ? note.lines[index - 1] : null
           const isNewGroup = !prev || authorKey(prev) !== authorKey(line)
-          const author = authorKey(line) ? participantsById[authorKey(line)!] : null
 
           return (
             <div
               key={line.id}
               className={isNewGroup ? "group/line mt-3 flex flex-col first:mt-0" : "group/line flex flex-col"}
             >
-              {isNewGroup && author ? (
-                <div className="mb-1 flex items-center gap-1.5 pl-8 text-xs font-medium text-muted-foreground">
-                  <span className="size-2 rounded-full" style={{ backgroundColor: author.color }} />
-                  {author.abbr || displayName(author.name) || author.email}
-                </div>
-              ) : null}
               <NoteLine
                 line={line}
                 me={me}
@@ -119,6 +108,8 @@ export function NoteEditor({
                 onLock={onLock}
                 onUnlock={onUnlock}
                 onChange={onChangeLine}
+                myHighlightEnabled={myHighlightEnabled}
+                highlightModeEnabled={highlightModeEnabled}
               />
               <button
                 type="button"
@@ -140,6 +131,8 @@ export function NoteEditor({
           <Plus className="size-3.5" />새 줄 추가
         </Button>
       </div>
+
+      <EditedByList note={note} />
     </div>
   )
 }

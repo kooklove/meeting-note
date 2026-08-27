@@ -86,6 +86,7 @@ export function toSnapshot(note: MeetingNote): MeetingNoteSnapshot {
     confirmedParticipantIds: [...note.confirmedBy],
     status: deriveStatus(note),
     sentAt: note.sentAt,
+    onlineMeetingUrl: note.onlineMeetingUrl,
   }
 }
 
@@ -136,6 +137,7 @@ export function createNote(input: CreateNoteInput): MeetingNoteSnapshot {
     meetingEnded: false,
     confirmedBy: new Set(),
     sentAt: null,
+    onlineMeetingUrl: null,
   }
   state.notes.set(input.slug, note)
   publishGlobal({ type: "note-created", note: toSummary(note) })
@@ -397,6 +399,18 @@ export function sendNote(
   }
 
   return { text: `${body}${footer}`, status, sentAt: note.sentAt }
+}
+
+export function setOnlineMeetingUrl(
+  slug: string,
+  url: string | null
+): { onlineMeetingUrl: string | null } | { error: "NOT_FOUND" } {
+  const note = getNote(slug)
+  if (!note) return { error: "NOT_FOUND" }
+
+  note.onlineMeetingUrl = url?.trim() || null
+  publish(slug, { type: "online-meeting-url-changed", onlineMeetingUrl: note.onlineMeetingUrl })
+  return { onlineMeetingUrl: note.onlineMeetingUrl }
 }
 
 export function moveCursor(slug: string, participantId: string, x: number, y: number) {

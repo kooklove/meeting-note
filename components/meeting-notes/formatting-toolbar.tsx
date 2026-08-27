@@ -30,7 +30,7 @@ export function FormattingToolbar({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm"
+      className="flex flex-wrap items-center gap-1 rounded-lg border bg-popover/80 p-1 shadow-sm backdrop-blur-sm"
       onMouseDown={(e) => e.preventDefault()}
     >
       <Button type="button" size="icon" variant="ghost" className="size-7" onClick={onBold} aria-label="굵게">

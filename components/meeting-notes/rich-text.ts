@@ -16,11 +16,14 @@ function escapeHtml(text: string) {
     .replace(/>/g, "&gt;")
 }
 
+export const HIGHLIGHT_COLOR = "#fef08a"
+
 function styleToCss(style: InlineStyle) {
   const parts: string[] = []
   if (style.bold) parts.push("font-weight:700")
   if (style.italic) parts.push("font-style:italic")
   if (style.underline) parts.push("text-decoration:underline")
+  if (style.highlight) parts.push(`background-color:${HIGHLIGHT_COLOR}`)
   if (style.fontFamily) parts.push(`font-family:${style.fontFamily}`)
   if (style.fontSize) parts.push(`font-size:${style.fontSize}px`)
   return parts.join(";")
@@ -49,6 +52,7 @@ function styleFromElement(el: HTMLElement, inherited: InlineStyle): InlineStyle 
   if (el.style.textDecorationLine.includes("underline") || el.style.textDecoration.includes("underline")) {
     style.underline = true
   }
+  if (el.style.backgroundColor) style.highlight = true
   if (el.style.fontFamily) style.fontFamily = el.style.fontFamily.replace(/["']/g, "")
   if (el.style.fontSize) {
     const px = Number.parseInt(el.style.fontSize, 10)
@@ -62,6 +66,7 @@ function sameStyle(a: InlineStyle, b: InlineStyle) {
     !!a.bold === !!b.bold &&
     !!a.italic === !!b.italic &&
     !!a.underline === !!b.underline &&
+    !!a.highlight === !!b.highlight &&
     a.fontFamily === b.fontFamily &&
     a.fontSize === b.fontSize
   )
@@ -133,6 +138,26 @@ export function applySelectionStyle(
   const insertedNodes = Array.from(wrapper.childNodes)
   range.insertNode(wrapper)
 
+  // extractContents가 원래 감싸던 인라인 요소(예: <span>)를 비운 채로 남겨두면,
+  // 방금 삽입한 노드들이 그 빈 요소(및 브라우저가 남긴 빈 텍스트 노드 잔재) 안에
+  // 다시 갇혀 이중으로 감싸인다. 그 경우 벗겨낸다.
+  if (insertedNodes.length > 0) {
+    const parent = insertedNodes[0].parentElement
+    if (parent && parent !== container && parent.tagName === "SPAN") {
+      const extraneous = Array.from(parent.childNodes).filter((n) => !insertedNodes.includes(n))
+      const onlyEmptyLeftovers = extraneous.every(
+        (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").length === 0
+      )
+      if (onlyEmptyLeftovers) {
+        const grandparent = parent.parentElement
+        if (grandparent) {
+          while (parent.firstChild) grandparent.insertBefore(parent.firstChild, parent)
+          parent.remove()
+        }
+      }
+    }
+  }
+
   if (insertedNodes.length > 0) {
     const newRange = document.createRange()
     newRange.setStartBefore(insertedNodes[0])
@@ -140,6 +165,42 @@ export function applySelectionStyle(
     selection.removeAllRanges()
     selection.addRange(newRange)
   }
+}
+
+function isRangeFullyHighlighted(range: Range): boolean {
+  const root = range.commonAncestorContainer
+
+  // 선택 범위가 텍스트 노드 하나 안에서 끝나면 그 노드 자신이 root가 되어
+  // TreeWalker로는 자식이 없어 순회되지 않으므로 부모 스타일을 직접 본다.
+  if (root.nodeType === Node.TEXT_NODE) {
+    const parent = root.parentElement
+    return !!parent && !!styleFromElement(parent, {}).highlight
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+  })
+
+  let foundText = false
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    if (!node.textContent) continue
+    foundText = true
+    const parent = node.parentElement
+    if (!parent || !styleFromElement(parent, {}).highlight) return false
+  }
+  return foundText
+}
+
+export function applyHighlightToggle(container: HTMLElement) {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (range.collapsed) return
+  if (!container.contains(range.commonAncestorContainer)) return
+
+  const allHighlighted = isRangeFullyHighlighted(range)
+  applySelectionStyle(container, (s) => ({ ...s, highlight: !allHighlighted }))
 }
 
 export function isSelectionActive(command: "bold" | "italic" | "underline") {
