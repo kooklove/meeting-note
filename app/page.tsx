@@ -1,9 +1,20 @@
 import Image from "next/image";
 
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+    <div className="flex flex-col flex-1 items-center justify-center bg-muted font-sans">
+      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-center gap-10 py-32 px-16">
         <Image
           className="dark:invert h-5 w-[100px]"
           src="/next.svg"
@@ -12,35 +23,48 @@ export default function Home() {
           height={20}
           priority
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Badge>shadcn 테마 적용됨</Badge>
+          <h1 className="max-w-md text-3xl font-semibold leading-10 tracking-tight text-foreground">
             시작하려면{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
+            <code className="rounded bg-foreground/10 px-1.5 py-0.5 font-mono text-[0.9em]">
               page.tsx
             </code>{" "}
             파일을 수정하세요.
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            시작점이나 더 많은 안내가 필요하신가요?{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              템플릿
-            </a>{" "}
-            이나{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              학습 센터
-            </a>
-            를 확인해 보세요.
+          <p className="max-w-md text-lg leading-8 text-muted-foreground">
+            아래 카드는 새로 적용된 테마 색상과 shadcn 컴포넌트를 보여줍니다.
           </p>
         </div>
+
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>컴포넌트 미리보기</CardTitle>
+            <CardDescription>
+              버튼과 배지 색상이 테마에 맞춰 바뀝니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              <Button>기본</Button>
+              <Button variant="secondary">보조</Button>
+              <Button variant="outline">아웃라인</Button>
+              <Button variant="ghost">고스트</Button>
+              <Button variant="destructive">위험</Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge>기본</Badge>
+              <Badge variant="secondary">보조</Badge>
+              <Badge variant="outline">아웃라인</Badge>
+              <Badge variant="destructive">위험</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
           <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+            className={cn(buttonVariants({ size: "lg" }))}
             href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
             target="_blank"
             rel="noopener noreferrer"
@@ -55,7 +79,7 @@ export default function Home() {
             지금 배포하기
           </a>
           <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
+            className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
             href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
             target="_blank"
             rel="noopener noreferrer"
