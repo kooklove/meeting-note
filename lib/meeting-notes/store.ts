@@ -1,8 +1,12 @@
 import { pickDefaultColor, PARTICIPANT_COLORS } from "./colors"
+import { participantLabel } from "./participant-label"
 import type {
+  GlobalNoteEvent,
   Line,
   MeetingNote,
   MeetingNoteSnapshot,
+  MeetingNoteSummary,
+  MeetingStatus,
   NoteEvent,
   Participant,
 } from "./types"
@@ -10,10 +14,12 @@ import type {
 const LOCK_STALE_MS = 30_000
 
 type Subscriber = (event: NoteEvent) => void
+type GlobalSubscriber = (event: GlobalNoteEvent) => void
 
 type StoreState = {
   notes: Map<string, MeetingNote>
   subscribers: Map<string, Set<Subscriber>>
+  globalSubscribers: Set<GlobalSubscriber>
 }
 
 const globalForStore = globalThis as unknown as { __meetingNoteStore?: StoreState }
@@ -23,6 +29,7 @@ const state: StoreState =
   (globalForStore.__meetingNoteStore = {
     notes: new Map(),
     subscribers: new Map(),
+    globalSubscribers: new Set(),
   })
 
 function newId() {
@@ -35,10 +42,30 @@ function publish(slug: string, event: NoteEvent) {
   for (const listener of listeners) listener(event)
 }
 
+function publishGlobal(event: GlobalNoteEvent) {
+  for (const listener of state.globalSubscribers) listener(event)
+}
+
 function releaseIfStale(line: Line) {
   if (line.lock && Date.now() - line.lock.lockedAt > LOCK_STALE_MS) {
     line.lock = null
   }
+}
+
+function deriveStatus(note: MeetingNote): MeetingStatus {
+  if (note.sentAt) return "sent"
+  if (note.meetingEnded) return "confirming"
+  return "draft"
+}
+
+function clearConfirmations(note: MeetingNote) {
+  if (note.confirmedBy.size === 0) return
+  note.confirmedBy.clear()
+  publish(note.slug, {
+    type: "confirmations-changed",
+    meetingEnded: note.meetingEnded,
+    confirmedParticipantIds: [],
+  })
 }
 
 export function toSnapshot(note: MeetingNote): MeetingNoteSnapshot {
@@ -47,21 +74,52 @@ export function toSnapshot(note: MeetingNote): MeetingNoteSnapshot {
   return {
     slug: note.slug,
     title: note.title,
+    scheduledAt: note.scheduledAt,
+    agenda: note.agenda,
+    inviteEmails: note.inviteEmails,
     createdAt: note.createdAt,
     hostId: note.hostId,
     lines: note.lines,
     participants,
     usedColors: participants.map((p) => p.color),
+    meetingEnded: note.meetingEnded,
+    confirmedParticipantIds: [...note.confirmedBy],
+    status: deriveStatus(note),
+    sentAt: note.sentAt,
   }
 }
 
-export function createNote(title: string, slug: string): MeetingNoteSnapshot {
-  if (state.notes.has(slug)) {
+export function toSummary(note: MeetingNote): MeetingNoteSummary {
+  return {
+    slug: note.slug,
+    title: note.title,
+    scheduledAt: note.scheduledAt,
+    agenda: note.agenda,
+    inviteEmails: note.inviteEmails,
+    createdAt: note.createdAt,
+    status: deriveStatus(note),
+    participantCount: Object.keys(note.participants).length,
+  }
+}
+
+export type CreateNoteInput = {
+  title: string
+  slug: string
+  scheduledAt: number
+  agenda?: string | null
+  inviteEmails?: string[]
+}
+
+export function createNote(input: CreateNoteInput): MeetingNoteSnapshot {
+  if (state.notes.has(input.slug)) {
     throw new Error("SLUG_TAKEN")
   }
   const note: MeetingNote = {
-    slug,
-    title,
+    slug: input.slug,
+    title: input.title,
+    scheduledAt: input.scheduledAt,
+    agenda: input.agenda?.trim() || null,
+    inviteEmails: input.inviteEmails ?? [],
     createdAt: Date.now(),
     hostId: null,
     participants: {},
@@ -75,8 +133,12 @@ export function createNote(title: string, slug: string): MeetingNoteSnapshot {
         lock: null,
       },
     ],
+    meetingEnded: false,
+    confirmedBy: new Set(),
+    sentAt: null,
   }
-  state.notes.set(slug, note)
+  state.notes.set(input.slug, note)
+  publishGlobal({ type: "note-created", note: toSummary(note) })
   return toSnapshot(note)
 }
 
@@ -87,6 +149,12 @@ export function getNote(slug: string): MeetingNote | null {
 export function getSnapshot(slug: string): MeetingNoteSnapshot | null {
   const note = getNote(slug)
   return note ? toSnapshot(note) : null
+}
+
+export function listNotes(): MeetingNoteSummary[] {
+  return [...state.notes.values()]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(toSummary)
 }
 
 export type JoinInput = {
@@ -169,6 +237,7 @@ export function createLine(
     if (afterIndex !== -1) index = afterIndex + 1
   }
   note.lines.splice(index, 0, line)
+  clearConfirmations(note)
 
   publish(slug, { type: "line-created", line, index })
   return { line, index }
@@ -246,8 +315,94 @@ export function updateLine(
     ...line.authorIds.filter((id) => id !== input.participantId),
   ].slice(0, 3)
 
+  clearConfirmations(note)
   publish(slug, { type: "line-updated", line })
   return { line }
+}
+
+export function setMeetingEnded(
+  slug: string,
+  ended: boolean
+): { meetingEnded: boolean } | { error: "NOT_FOUND" } {
+  const note = getNote(slug)
+  if (!note) return { error: "NOT_FOUND" }
+
+  note.meetingEnded = ended
+  note.confirmedBy.clear()
+
+  publish(slug, {
+    type: "confirmations-changed",
+    meetingEnded: note.meetingEnded,
+    confirmedParticipantIds: [],
+  })
+  publish(slug, { type: "status-changed", status: deriveStatus(note), sentAt: note.sentAt })
+  return { meetingEnded: note.meetingEnded }
+}
+
+export function setConfirmation(
+  slug: string,
+  participantId: string,
+  confirmed: boolean
+): { confirmedParticipantIds: string[] } | { error: "NOT_FOUND" | "NOT_ENDED" } {
+  const note = getNote(slug)
+  if (!note) return { error: "NOT_FOUND" }
+  if (!note.meetingEnded) return { error: "NOT_ENDED" }
+
+  if (confirmed) note.confirmedBy.add(participantId)
+  else note.confirmedBy.delete(participantId)
+
+  const confirmedParticipantIds = [...note.confirmedBy]
+  publish(slug, {
+    type: "confirmations-changed",
+    meetingEnded: note.meetingEnded,
+    confirmedParticipantIds,
+  })
+  return { confirmedParticipantIds }
+}
+
+function lineToPlainText(line: Line): string {
+  const text = line.runs.map((run) => run.text).join("")
+  const indent = "  ".repeat(line.indent)
+  if (line.kind === "bullet") return `${indent}- ${text}`
+  return `${indent}${text}`
+}
+
+export type SendMethod = "clipboard" | "teams" | "mail"
+
+export function sendNote(
+  slug: string
+): { text: string; status: MeetingStatus; sentAt: number } | { error: "NOT_FOUND" } {
+  const note = getNote(slug)
+  if (!note) return { error: "NOT_FOUND" }
+
+  const body = note.lines.map(lineToPlainText).join("\n")
+  const participants = Object.values(note.participants).sort((a, b) => a.joinedAt - b.joinedAt)
+  const confirmed = participants.filter((p) => note.confirmedBy.has(p.id))
+  const unconfirmed = participants.filter((p) => !note.confirmedBy.has(p.id))
+
+  const footer = [
+    "",
+    "---",
+    `최종내용 확인 참석자: ${confirmed.length > 0 ? confirmed.map(participantLabel).join(", ") : "없음"}`,
+    `최종내용 미확인 참석자: ${unconfirmed.length > 0 ? unconfirmed.map(participantLabel).join(", ") : "없음"}`,
+  ].join("\n")
+
+  const wasSent = note.sentAt !== null
+  if (!note.sentAt) note.sentAt = Date.now()
+  const status = deriveStatus(note)
+
+  if (!wasSent) {
+    publish(slug, { type: "status-changed", status, sentAt: note.sentAt })
+    publishGlobal({ type: "note-status-changed", slug, status })
+  }
+
+  return { text: `${body}${footer}`, status, sentAt: note.sentAt }
+}
+
+export function moveCursor(slug: string, participantId: string, x: number, y: number) {
+  const note = getNote(slug)
+  if (!note) return
+  publish(slug, { type: "cursor-moved", participantId, x, y, at: Date.now() })
 }
 
 export function subscribe(slug: string, listener: Subscriber): () => void {
@@ -259,5 +414,12 @@ export function subscribe(slug: string, listener: Subscriber): () => void {
   listeners.add(listener)
   return () => {
     listeners?.delete(listener)
+  }
+}
+
+export function subscribeGlobal(listener: GlobalSubscriber): () => void {
+  state.globalSubscribers.add(listener)
+  return () => {
+    state.globalSubscribers.delete(listener)
   }
 }
