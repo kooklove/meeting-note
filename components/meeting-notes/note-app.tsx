@@ -11,7 +11,7 @@ type Phase = "checking" | "not-found" | "join" | "ready"
 
 export function NoteApp({ slug }: { slug: string }) {
   const storageKey = `meeting-note:${slug}:sessionId`
-  const { note } = useNoteStream(slug)
+  const { note, cursors } = useNoteStream(slug)
 
   const [phase, setPhase] = useState<Phase>("checking")
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -107,6 +107,34 @@ export function NoteApp({ slug }: { slug: string }) {
     })
   }
 
+  async function handleEndMeeting() {
+    await fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/end`, { method: "POST" })
+  }
+
+  async function handleReopenMeeting() {
+    await fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/reopen`, { method: "POST" })
+  }
+
+  function handleConfirm(confirmed: boolean) {
+    if (!sessionId) return
+    fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/confirmations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participantId: sessionId, confirmed }),
+    })
+  }
+
+  async function handleSendClipboard(): Promise<string> {
+    const res = await fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method: "clipboard" }),
+    })
+    if (!res.ok) throw new Error("SEND_FAILED")
+    const data = await res.json()
+    return data.text as string
+  }
+
   if (phase === "checking") {
     return <p className="py-20 text-center text-sm text-muted-foreground">불러오는 중...</p>
   }
@@ -137,15 +165,20 @@ export function NoteApp({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="flex justify-center px-4">
+    <div className="flex flex-1 justify-center px-4">
       <NoteEditor
         note={note}
         me={me}
         sessionId={sessionId}
+        cursors={cursors}
         onLock={handleLock}
         onUnlock={handleUnlock}
         onChangeLine={handleChangeLine}
         onCreateLine={handleCreateLine}
+        onEndMeeting={handleEndMeeting}
+        onReopenMeeting={handleReopenMeeting}
+        onConfirm={handleConfirm}
+        onSendClipboard={handleSendClipboard}
       />
     </div>
   )

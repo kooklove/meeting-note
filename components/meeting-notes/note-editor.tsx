@@ -1,36 +1,76 @@
 "use client"
 
+import { useRef } from "react"
 import { Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { MeetingWrapUp } from "./meeting-wrap-up"
 import { NoteLine } from "./note-line"
+import { NoteStatusBadge } from "./note-status-badge"
+import { RemoteCursors } from "./remote-cursors"
+import { SendMenu } from "./send-menu"
 import { SessionBadge } from "./session-badge"
-import type { Line, MeetingNoteSnapshot, Participant } from "@/lib/meeting-notes/types"
+import { useCursorBroadcast } from "./use-cursor-broadcast"
+import { formatScheduledAt } from "@/lib/meeting-notes/datetime"
+import type { CursorPosition, Line, MeetingNoteSnapshot, Participant } from "@/lib/meeting-notes/types"
+
+function displayName(name: string | null) {
+  if (!name) return null
+  return name.length > 4 ? name.slice(0, 4) : name
+}
+
+function authorKey(line: Line) {
+  return line.authorIds[0] ?? null
+}
 
 export function NoteEditor({
   note,
   me,
   sessionId,
+  cursors,
   onLock,
   onUnlock,
   onChangeLine,
   onCreateLine,
+  onEndMeeting,
+  onReopenMeeting,
+  onConfirm,
+  onSendClipboard,
 }: {
   note: MeetingNoteSnapshot
   me: Participant
   sessionId: string
+  cursors: Record<string, CursorPosition>
   onLock: (lineId: string) => Promise<boolean>
   onUnlock: (lineId: string) => void
   onChangeLine: (lineId: string, patch: { runs: Line["runs"]; kind?: Line["kind"]; indent?: number }) => void
   onCreateLine: (afterLineId: string | null) => void
+  onEndMeeting: () => Promise<void>
+  onReopenMeeting: () => Promise<void>
+  onConfirm: (confirmed: boolean) => void
+  onSendClipboard: () => Promise<string>
 }) {
   const participantsById = Object.fromEntries(note.participants.map((p) => [p.id, p]))
+  const containerRef = useRef<HTMLDivElement>(null)
+  useCursorBroadcast(note.slug, sessionId, containerRef)
 
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-6 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">{note.title}</h1>
-        <SessionBadge sessionId={sessionId} />
+    <div className="flex w-full max-w-3xl flex-col gap-6 self-center py-10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">{note.title}</h1>
+            <NoteStatusBadge status={note.status} />
+          </div>
+          <p className="text-sm text-muted-foreground">{formatScheduledAt(note.scheduledAt)}</p>
+          {note.agenda ? (
+            <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{note.agenda}</p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <SessionBadge sessionId={sessionId} />
+          <SendMenu onSendClipboard={onSendClipboard} />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-2">
@@ -46,26 +86,50 @@ export function NoteEditor({
         ))}
       </div>
 
-      <div className="flex flex-col gap-1 rounded-xl border bg-card p-4">
-        {note.lines.map((line) => (
-          <div key={line.id} className="group/line flex flex-col">
-            <NoteLine
-              line={line}
-              me={me}
-              participants={participantsById}
-              onLock={onLock}
-              onUnlock={onUnlock}
-              onChange={onChangeLine}
-            />
-            <button
-              type="button"
-              onClick={() => onCreateLine(line.id)}
-              className="ml-8 flex items-center gap-1 py-0.5 text-[11px] text-muted-foreground opacity-0 transition group-hover/line:opacity-100 hover:text-foreground"
+      <MeetingWrapUp
+        note={note}
+        me={me}
+        onEndMeeting={onEndMeeting}
+        onReopenMeeting={onReopenMeeting}
+        onConfirm={onConfirm}
+      />
+
+      <div ref={containerRef} className="relative flex flex-col gap-1 rounded-xl border bg-card p-4">
+        <RemoteCursors cursors={cursors} participants={participantsById} selfId={sessionId} />
+        {note.lines.map((line, index) => {
+          const prev = index > 0 ? note.lines[index - 1] : null
+          const isNewGroup = !prev || authorKey(prev) !== authorKey(line)
+          const author = authorKey(line) ? participantsById[authorKey(line)!] : null
+
+          return (
+            <div
+              key={line.id}
+              className={isNewGroup ? "group/line mt-3 flex flex-col first:mt-0" : "group/line flex flex-col"}
             >
-              <Plus className="size-3" />새 줄
-            </button>
-          </div>
-        ))}
+              {isNewGroup && author ? (
+                <div className="mb-1 flex items-center gap-1.5 pl-8 text-xs font-medium text-muted-foreground">
+                  <span className="size-2 rounded-full" style={{ backgroundColor: author.color }} />
+                  {author.abbr || displayName(author.name) || author.email}
+                </div>
+              ) : null}
+              <NoteLine
+                line={line}
+                me={me}
+                participants={participantsById}
+                onLock={onLock}
+                onUnlock={onUnlock}
+                onChange={onChangeLine}
+              />
+              <button
+                type="button"
+                onClick={() => onCreateLine(line.id)}
+                className="ml-8 flex items-center gap-1 py-0.5 text-[11px] text-muted-foreground opacity-0 transition group-hover/line:opacity-100 hover:text-foreground"
+              >
+                <Plus className="size-3" />새 줄
+              </button>
+            </div>
+          )
+        })}
         <Button
           type="button"
           variant="ghost"
@@ -78,9 +142,4 @@ export function NoteEditor({
       </div>
     </div>
   )
-}
-
-function displayName(name: string | null) {
-  if (!name) return null
-  return name.length > 4 ? name.slice(0, 4) : name
 }

@@ -2,11 +2,20 @@
 
 import { useEffect, useRef, useState } from "react"
 
-import type { Line, MeetingNoteSnapshot, Participant } from "@/lib/meeting-notes/types"
+import type {
+  CursorPosition,
+  Line,
+  MeetingNoteSnapshot,
+  MeetingStatus,
+  Participant,
+} from "@/lib/meeting-notes/types"
+
+const CURSOR_STALE_MS = 10_000
 
 export function useNoteStream(slug: string) {
   const [note, setNote] = useState<MeetingNoteSnapshot | null>(null)
   const [connected, setConnected] = useState(false)
+  const [cursors, setCursors] = useState<Record<string, CursorPosition>>({})
   const noteRef = useRef<MeetingNoteSnapshot | null>(null)
 
   useEffect(() => {
@@ -71,10 +80,51 @@ export function useNoteStream(slug: string) {
       }))
     })
 
+    source.addEventListener("confirmations-changed", (event) => {
+      const data = JSON.parse(event.data) as {
+        meetingEnded: boolean
+        confirmedParticipantIds: string[]
+      }
+      update((prev) => ({
+        ...prev,
+        meetingEnded: data.meetingEnded,
+        confirmedParticipantIds: data.confirmedParticipantIds,
+      }))
+    })
+
+    source.addEventListener("status-changed", (event) => {
+      const data = JSON.parse(event.data) as { status: MeetingStatus; sentAt: number | null }
+      update((prev) => ({ ...prev, status: data.status, sentAt: data.sentAt }))
+    })
+
+    source.addEventListener("cursor-moved", (event) => {
+      const data = JSON.parse(event.data) as CursorPosition
+      setCursors((prev) => ({ ...prev, [data.participantId]: data }))
+    })
+
     source.onerror = () => setConnected(false)
 
     return () => source.close()
   }, [slug])
 
-  return { note, connected }
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cutoff = Date.now() - CURSOR_STALE_MS
+      setCursors((prev) => {
+        const next: Record<string, CursorPosition> = {}
+        let changed = false
+        for (const [id, cursor] of Object.entries(prev)) {
+          if (cursor.at >= cutoff) {
+            next[id] = cursor
+          } else {
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+    }, 1_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  return { note, connected, cursors }
 }
