@@ -2,6 +2,7 @@ export type InlineStyle = {
   bold?: boolean
   italic?: boolean
   underline?: boolean
+  highlight?: boolean
   fontFamily?: string
   fontSize?: number
 }
@@ -53,6 +54,7 @@ export type MeetingNote = {
   meetingEnded: boolean
   confirmedBy: Set<string>
   sentAt: number | null
+  onlineMeetingUrl: string | null
 }
 
 export type MeetingNoteSnapshot = Omit<
@@ -92,6 +94,7 @@ export type NoteEvent =
   | { type: "confirmations-changed"; meetingEnded: boolean; confirmedParticipantIds: string[] }
   | { type: "status-changed"; status: MeetingStatus; sentAt: number | null }
   | { type: "cursor-moved"; participantId: string; x: number; y: number; at: number }
+  | { type: "online-meeting-url-changed"; onlineMeetingUrl: string | null }
 
 export type GlobalNoteEvent =
   | { type: "note-created"; note: MeetingNoteSummary }

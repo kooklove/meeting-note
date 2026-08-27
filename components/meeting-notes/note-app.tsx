@@ -124,6 +124,14 @@ export function NoteApp({ slug }: { slug: string }) {
     })
   }
 
+  function handleUpdateOnlineMeetingUrl(url: string) {
+    fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/online-meeting`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ onlineMeetingUrl: url }),
+    })
+  }
+
   async function handleSendClipboard(): Promise<string> {
     const res = await fetch(`/api/meeting-notes/${encodeURIComponent(slug)}/send`, {
       method: "POST",
@@ -179,6 +187,7 @@ export function NoteApp({ slug }: { slug: string }) {
         onReopenMeeting={handleReopenMeeting}
         onConfirm={handleConfirm}
         onSendClipboard={handleSendClipboard}
+        onUpdateOnlineMeetingUrl={handleUpdateOnlineMeetingUrl}
       />
     </div>
   )

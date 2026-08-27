@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
 import { FormattingToolbar } from "./formatting-toolbar"
-import { applySelectionStyle, runsToHtml, htmlToRuns } from "./rich-text"
+import { applyHighlightToggle, applySelectionStyle, runsToHtml, htmlToRuns } from "./rich-text"
 import { cn } from "@/lib/utils"
 import type { InlineStyle, Line, Participant } from "@/lib/meeting-notes/types"
 
@@ -16,6 +16,8 @@ export function NoteLine({
   onLock,
   onUnlock,
   onChange,
+  myHighlightEnabled,
+  highlightModeEnabled,
 }: {
   line: Line
   me: Participant
@@ -23,6 +25,8 @@ export function NoteLine({
   onLock: (lineId: string) => Promise<boolean>
   onUnlock: (lineId: string) => void
   onChange: (lineId: string, patch: { runs: Line["runs"]; kind?: Line["kind"]; indent?: number }) => void
+  myHighlightEnabled: boolean
+  highlightModeEnabled: boolean
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const savedRangeRef = useRef<Range | null>(null)
@@ -86,6 +90,26 @@ export function NoteLine({
     }
   }
 
+  async function handleMouseUp() {
+    saveSelection()
+    if (!highlightModeEnabled || isLockedByOther) return
+
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed) return
+    if (!contentRef.current?.contains(selection.anchorNode)) return
+
+    if (!editing) {
+      const ok = await onLock(line.id)
+      if (!ok) return
+      setEditing(true)
+    }
+
+    const el = contentRef.current
+    if (!el) return
+    applyHighlightToggle(el)
+    handleInput()
+  }
+
   function restoreSelection() {
     const el = contentRef.current
     const range = savedRangeRef.current
@@ -108,6 +132,8 @@ export function NoteLine({
     .map((id) => participants[id])
     .filter((p): p is Participant => !!p)
 
+  const isMyLine = myHighlightEnabled && line.authorIds.includes(me.id)
+
   return (
     <div className="group relative flex items-start gap-2" style={{ paddingLeft: line.indent * INDENT_PX }}>
       <div className="flex w-8 shrink-0 flex-col items-end pt-1.5">
@@ -115,7 +141,7 @@ export function NoteLine({
           <span
             key={p.id + i}
             title={p.name || p.email}
-            className="-mt-1 size-[9px] rounded-full ring-1 ring-background first:mt-0"
+            className="-mt-0.5 size-[4.5px] rounded-full ring-1 ring-background first:mt-0"
             style={{ backgroundColor: p.color, zIndex: 3 - i }}
           />
         ))}
@@ -125,9 +151,38 @@ export function NoteLine({
         <span className="pt-1.5 text-muted-foreground select-none">•</span>
       ) : null}
 
-      <div className="min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={contentRef}
+          role="textbox"
+          aria-multiline="true"
+          contentEditable={editing}
+          suppressContentEditableWarning
+          onClick={startEditing}
+          onFocus={startEditing}
+          onBlur={stopEditing}
+          onInput={handleInput}
+          onKeyUp={saveSelection}
+          onMouseUp={handleMouseUp}
+          className={cn(
+            "min-h-6 rounded px-1 py-0.5 text-sm leading-6 outline-none empty:before:text-muted-foreground/60 empty:before:content-['클릭해서_입력...']",
+            isLockedByOther && "cursor-not-allowed bg-muted/60",
+            editing && "ring-2 ring-offset-1"
+          )}
+          style={{
+            ...(editing ? ({ ["--tw-ring-color" as string]: me.color } as React.CSSProperties) : undefined),
+            backgroundColor: isMyLine ? `${me.color}26` : undefined,
+          }}
+        />
+        {isLockedByOther && lockedByParticipant ? (
+          <p className="mt-0.5 text-[11px]" style={{ color: lockedByParticipant.color }}>
+            {lockedByParticipant.abbr || displayName(lockedByParticipant.name) || lockedByParticipant.email}
+            님이 편집 중
+          </p>
+        ) : null}
+
         {editing ? (
-          <div className="mb-1">
+          <div className="absolute left-0 top-full z-10 mt-1 opacity-90">
             <FormattingToolbar
               kind={line.kind}
               indent={line.indent}
@@ -152,32 +207,6 @@ export function NoteLine({
               onFontSize={(value) => withSelection((s) => ({ ...s, fontSize: value }))}
             />
           </div>
-        ) : null}
-
-        <div
-          ref={contentRef}
-          role="textbox"
-          aria-multiline="true"
-          contentEditable={editing}
-          suppressContentEditableWarning
-          onClick={startEditing}
-          onFocus={startEditing}
-          onBlur={stopEditing}
-          onInput={handleInput}
-          onKeyUp={saveSelection}
-          onMouseUp={saveSelection}
-          className={cn(
-            "min-h-6 rounded px-1 py-0.5 text-sm leading-6 outline-none empty:before:text-muted-foreground/60 empty:before:content-['클릭해서_입력...']",
-            isLockedByOther && "cursor-not-allowed bg-muted/60",
-            editing && "ring-2 ring-offset-1"
-          )}
-          style={editing ? ({ ["--tw-ring-color" as string]: me.color } as React.CSSProperties) : undefined}
-        />
-        {isLockedByOther && lockedByParticipant ? (
-          <p className="mt-0.5 text-[11px]" style={{ color: lockedByParticipant.color }}>
-            {lockedByParticipant.abbr || displayName(lockedByParticipant.name) || lockedByParticipant.email}
-            님이 편집 중
-          </p>
         ) : null}
       </div>
     </div>
